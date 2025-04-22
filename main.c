@@ -30,7 +30,7 @@ typedef enum {
     GLOBALMEM_IP,
     GLOBALMEM_SP,
     GLOBALMEM_BP,
-};
+} globalmem_t;
 
 typedef struct {
     inst_t inst;
