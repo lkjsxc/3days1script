@@ -23,12 +23,18 @@ typedef struct {
     char* token;
 } node_t;
 
+typedef struct {
+    char* key;
+    int32_t value;
+} cipair_t;
+
 union {
     int32_t i32[mem_size / sizeof(int32_t)];
     struct {
-        int32_t bin[mem_size / sizeof(int32_t)];
-        char src[mem_size / sizeof(char)];
-        node_t node[mem_size / sizeof(node_t)];
+        int32_t bin[mem_size / sizeof(int32_t) / 4];
+        char src[mem_size / sizeof(char) / 4];
+        node_t node[mem_size / sizeof(node_t) / 4];
+        cipair_t map[mem_size / sizeof(cipair_t) / 4];
     } compile_data;
 } mem;
 
@@ -83,20 +89,17 @@ bool token_isnum(char* token) {
 int token_toint(char* token) {
     int num = 0;
     while (*token != '\0' && *token != ' ' && *token != '\n' && *token != '\t') {
-        num = num * 10 + (*token - '0');
-        token++;
+        num = num * 10 + (*(token++) - '0');
     }
     return num;
 }
 
 void parse_indent(char** src_itr, node_t** node_itr) {
     if (token_isnum(*src_itr) == OK) {
-        **node_itr = (node_t){.inst = INST_PUSH_CONST, .token = *src_itr};
-        *node_itr = *node_itr + 1;
+        *((*node_itr)++) = (node_t){.inst = INST_PUSH_CONST, .token = *src_itr};
         *src_itr = token_next(*src_itr);
     } else {
-        **node_itr = (node_t){.inst = INST_PUSH_LOCAL, .token = *src_itr};
-        *node_itr = *node_itr + 1;
+        *((*node_itr)++) = (node_t){.inst = INST_PUSH_LOCAL, .token = *src_itr};
         *src_itr = token_next(*src_itr);
     }
 }
@@ -106,8 +109,7 @@ void parse_assign(char** src_itr, node_t** node_itr) {
     if (token_eq(*src_itr, "=")) {
         *src_itr = token_next(*src_itr);
         parse_indent(src_itr, node_itr);
-        **node_itr = (node_t){.inst = INST_ASSIGN, .token = NULL};
-        *node_itr = *node_itr + 1;
+        *((*node_itr)++) = (node_t){.inst = INST_ASSIGN, .token = NULL};
     }
 }
 
@@ -130,8 +132,30 @@ void parse() {
     *node_itr = (node_t){.inst = INST_NULL, .token = NULL};
 }
 
+void tobin() {
+    node_t* node_itr = mem.compile_data.node;
+    int32_t* bin_itr = mem.compile_data.bin + 16;
+    while (node_itr->inst != INST_NULL) {
+        switch (node_itr->inst) {
+            case INST_PUSH_CONST:
+                *(bin_itr++) = INST_PUSH_CONST;
+                *(bin_itr++) = token_toint(node_itr->token);
+                break;
+                case INST_PUSH_LOCAL:
+                    break;
+            case INST_ASSIGN:
+                break;
+            default:
+                break;
+        }
+        bin_itr++;
+        node_itr++;
+    }
+}
+
 void compile() {
     parse();
+    tobin();
 }
 
 int main() {
