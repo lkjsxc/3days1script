@@ -19,10 +19,10 @@ typedef enum {
 
 typedef enum {
     INST_NULL,
-    INST_PUSH_LOCAL,
+    INST_PUSH_LOCAL_VAL,
+    INST_PUSH_LOCAL_ADDR,
     INST_PUSH_CONST,
     INST_ASSIGN,
-    INST_DEBUG,
 } inst_t;
 
 typedef enum {
@@ -51,6 +51,8 @@ union {
         cipair_t map[MEM_SIZE / sizeof(cipair_t) / 4];
     } compile_data;
 } mem;
+
+void parse_expr(char** src_itr, node_t** node_itr);
 
 status_t readsrc() {
     FILE* file = fopen(src_path, "r");
@@ -108,21 +110,27 @@ int token_toint(char* token) {
     return num;
 }
 
-void parse_indent(char** src_itr, node_t** node_itr) {
-    if (token_isnum(*src_itr) == true) {
+void parse_primary(char** src_itr, node_t** node_itr) {
+    if (token_eq(*src_itr, "(")) {
+        parse_expr(src_itr, node_itr);
+    } else if (token_isnum(*src_itr) == true) {
         *((*node_itr)++) = (node_t){.inst = INST_PUSH_CONST, .token = *src_itr};
         *src_itr = token_next(*src_itr);
+    } else if (**src_itr == '&') {
+        *src_itr = *src_itr + 1;
+        *((*node_itr)++) = (node_t){.inst = INST_PUSH_LOCAL_ADDR, .token = *src_itr};
+        *src_itr = token_next(*src_itr);
     } else {
-        *((*node_itr)++) = (node_t){.inst = INST_PUSH_LOCAL, .token = *src_itr};
+        *((*node_itr)++) = (node_t){.inst = INST_PUSH_LOCAL_VAL, .token = *src_itr};
         *src_itr = token_next(*src_itr);
     }
 }
 
 void parse_assign(char** src_itr, node_t** node_itr) {
-    parse_indent(src_itr, node_itr);
+    parse_primary(src_itr, node_itr);
     if (token_eq(*src_itr, "=")) {
         *src_itr = token_next(*src_itr);
-        parse_indent(src_itr, node_itr);
+        parse_primary(src_itr, node_itr);
         *((*node_itr)++) = (node_t){.inst = INST_ASSIGN, .token = NULL};
     }
 }
@@ -149,14 +157,30 @@ void parse() {
 void tobin() {
     node_t* node_itr = mem.compile_data.node;
     int32_t* bin_itr = mem.compile_data.bin + GLOBALMEM_SIZE;
+    int32_t localval_cnt = 0;
     while (node_itr->inst != INST_NULL) {
         switch (node_itr->inst) {
             case INST_PUSH_CONST:
                 *(bin_itr++) = INST_PUSH_CONST;
                 *(bin_itr++) = token_toint(node_itr->token);
                 break;
-            case INST_PUSH_LOCAL:
-                break;
+            case INST_PUSH_LOCAL_VAL:
+            case INST_PUSH_LOCAL_ADDR: {
+                cipair_t* map_itr = mem.compile_data.map;
+                while (map_itr->key != NULL) {
+                    if (token_eq(node_itr->token, map_itr->key)) {
+                        *(bin_itr++) = INST_PUSH_LOCAL_VAL;
+                        *(bin_itr++) = map_itr->value;
+                        break;
+                    }
+                    map_itr++;
+                }
+                if (map_itr->key == NULL) {
+                    *(map_itr) = (cipair_t){.key = node_itr->token, .value = localval_cnt++};
+                    *(bin_itr++) = node_itr->inst;
+                    *(bin_itr++) = map_itr->value;
+                }
+            } break;
             case INST_ASSIGN:
                 *(bin_itr++) = INST_ASSIGN;
                 break;
@@ -166,8 +190,8 @@ void tobin() {
         node_itr++;
     }
     mem.i32[GLOBALMEM_IP] = GLOBALMEM_SIZE;
-    mem.i32[GLOBALMEM_SP] = bin_itr - mem.compile_data.bin;
-    mem.i32[GLOBALMEM_BP] = mem.i32[GLOBALMEM_SP] + DEFAULT_STACK_SIZE;
+    mem.i32[GLOBALMEM_BP] = bin_itr - mem.compile_data.bin;
+    mem.i32[GLOBALMEM_SP] = mem.i32[GLOBALMEM_BP] + DEFAULT_STACK_SIZE;
 }
 
 void compile() {
@@ -176,22 +200,29 @@ void compile() {
 }
 
 void exec() {
-    int32_t* bin_itr = mem.compile_data.bin + 16;
-    while (*bin_itr != INST_NULL) {
-        switch (*bin_itr) {
-            case INST_PUSH_CONST:
-                bin_itr++;
-                mem.i32[mem.i32[GLOBALMEM_SP]++] = *bin_itr;
-                break;
-            case INST_PUSH_LOCAL:
-                break;
-            case INST_ASSIGN:
-                mem.i32[mem.i32[mem.i32[GLOBALMEM_SP] - 2]] = mem.i32[mem.i32[GLOBALMEM_SP] - 1];
-                break;
+    while (true) {
+        switch (mem.i32[mem.i32[GLOBALMEM_IP]++]) {
+            case INST_PUSH_LOCAL_VAL: {
+                int32_t addr = mem.i32[mem.i32[GLOBALMEM_IP]++] + mem.i32[GLOBALMEM_BP];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = mem.i32[addr];
+            } break;
+            case INST_PUSH_LOCAL_ADDR: {
+                int32_t addr = mem.i32[mem.i32[GLOBALMEM_IP]++] + mem.i32[GLOBALMEM_BP];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = addr;
+            } break;
+            case INST_PUSH_CONST: {
+                int32_t val = mem.i32[mem.i32[GLOBALMEM_IP]++];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val;
+            } break;
+            case INST_ASSIGN: {
+                int32_t val = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t addr = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[addr] = val;
+            } break;
+
             default:
-                break;
+                return;
         }
-        bin_itr++;
     }
 }
 
