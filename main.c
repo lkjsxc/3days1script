@@ -82,7 +82,7 @@ char* token_next(char* itr) {
 }
 
 bool token_eq(char* token, char* str) {
-    while (*str != '\0') {
+    while (*str != '\0' && *token != ' ' && *token != '\n' && *token != '\t') {
         if (*token != *str) {
             return false;
         }
