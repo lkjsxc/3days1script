@@ -1,5 +1,6 @@
-#include <stdio.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #define src_path "./src.txt"
 #define mem_size 65536
@@ -11,8 +12,10 @@ typedef enum {
 
 typedef enum {
     INST_NULL,
-    INST_PUSH,
+    INST_PUSH_LOCAL,
+    INST_PUSH_CONST,
     INST_ASSIGN,
+    INST_DEBUG,
 } inst_t;
 
 typedef struct {
@@ -46,13 +49,93 @@ status_t readsrc() {
     fclose(file);
 }
 
-status_t parse() {
+char* token_next(char* itr) {
+    while (*itr != ' ' && *itr != '\n' && *itr != '\t') {
+        itr++;
+    }
+    while (*itr == ' ' || *itr == '\n' || *itr == '\t') {
+        itr++;
+    }
+    return itr;
+}
+
+bool token_eq(char* token, char* str) {
+    while (*str != '\0') {
+        if (*token != *str) {
+            return false;
+        }
+        token++;
+        str++;
+    }
+    return true;
+}
+
+bool token_isnum(char* token) {
+    while (*token != '\0' && *token != ' ' && *token != '\n' && *token != '\t') {
+        if (*token < '0' || *token > '9') {
+            return false;
+        }
+        token++;
+    }
+    return (*token == '\0' || *token == ' ' || *token == '\n' || *token == '\t');
+}
+
+int token_toint(char* token) {
+    int num = 0;
+    while (*token != '\0' && *token != ' ' && *token != '\n' && *token != '\t') {
+        num = num * 10 + (*token - '0');
+        token++;
+    }
+    return num;
+}
+
+void parse_indent(char** src_itr, node_t** node_itr) {
+    if (token_isnum(*src_itr) == OK) {
+        **node_itr = (node_t){.inst = INST_PUSH_CONST, .token = *src_itr};
+        *src_itr = token_next(*src_itr);
+        *node_itr = *node_itr + 1;
+    } else {
+        **node_itr = (node_t){.inst = INST_PUSH_LOCAL, .token = *src_itr};
+        *src_itr = token_next(*src_itr);
+        *node_itr = *node_itr + 1;
+    }
+}
+
+void parse_assign(char** src_itr, node_t** node_itr) {
+    parse_indent(src_itr, node_itr);
+    if (token_eq(*src_itr, "=")) {
+        *src_itr = token_next(*src_itr);
+        parse_indent(src_itr, node_itr);
+    }
+}
+
+void parse_expr(char** src_itr, node_t** node_itr) {
+    if (token_eq(*src_itr, "(")) {
+        *src_itr = token_next(*src_itr);
+        while (!token_eq(*src_itr, ")")) {
+            parse_expr(src_itr, node_itr);
+        }
+        *src_itr = token_next(*src_itr);
+    } else {
+        parse_assign(src_itr, node_itr);
+    }
+}
+
+void parse() {
+    char* src_itr = mem.compile_data.src;
+    node_t* node_itr = mem.compile_data.node;
+    parse_expr(&src_itr, &node_itr);
+    *node_itr = (node_t){.inst = INST_NULL, .token = NULL};
+}
+
+void compile() {
+    parse();
 }
 
 int main() {
     if (readsrc() == NG) {
         return 1;
     }
-    printf("Data read from file:\n%s", mem.compile_data.src);
+    compile();
     return 0;
 }
