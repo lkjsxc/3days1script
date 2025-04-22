@@ -92,12 +92,12 @@ int token_toint(char* token) {
 void parse_indent(char** src_itr, node_t** node_itr) {
     if (token_isnum(*src_itr) == OK) {
         **node_itr = (node_t){.inst = INST_PUSH_CONST, .token = *src_itr};
-        *src_itr = token_next(*src_itr);
         *node_itr = *node_itr + 1;
+        *src_itr = token_next(*src_itr);
     } else {
         **node_itr = (node_t){.inst = INST_PUSH_LOCAL, .token = *src_itr};
-        *src_itr = token_next(*src_itr);
         *node_itr = *node_itr + 1;
+        *src_itr = token_next(*src_itr);
     }
 }
 
@@ -106,6 +106,8 @@ void parse_assign(char** src_itr, node_t** node_itr) {
     if (token_eq(*src_itr, "=")) {
         *src_itr = token_next(*src_itr);
         parse_indent(src_itr, node_itr);
+        **node_itr = (node_t){.inst = INST_ASSIGN, .token = NULL};
+        *node_itr = *node_itr + 1;
     }
 }
 
