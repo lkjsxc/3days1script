@@ -19,10 +19,35 @@ typedef enum {
 
 typedef enum {
     INST_NULL,
+    INST_PUSH_GLOBAL_VAL,
     INST_PUSH_LOCAL_VAL,
     INST_PUSH_LOCAL_ADDR,
     INST_PUSH_CONST,
+    INST_DEREF,
     INST_ASSIGN,
+    INST_CALL,
+    INST_RETURN,
+    INST_JMP,
+    INST_JMZ,
+    INST_OR,
+    INST_AND,
+    INST_EQ,
+    INST_NE,
+    INST_LT,
+    INST_LE,
+    INST_GT,
+    INST_GE,
+    INST_ADD,
+    INST_SUB,
+    INST_MUL,
+    INST_DIV,
+    INST_MOD,
+    INST_SHL,
+    INST_SHR,
+    INST_BITAND,
+    INST_BITOR,
+    INST_BITXOR,
+    INST_BITNOT,
 } inst_t;
 
 typedef enum {
@@ -35,6 +60,7 @@ typedef enum {
 typedef struct {
     inst_t inst;
     char* token;
+    int32_t val;
 } node_t;
 
 typedef struct {
@@ -81,13 +107,14 @@ char* token_next(char* itr) {
     return itr;
 }
 
-bool token_eq(char* token, char* str) {
-    while (*str != '\0' && *token != ' ' && *token != '\n' && *token != '\t') {
-        if (*token != *str) {
+bool token_eq(char* src1, char* src2) {
+    while (*src1 != '\0' && *src1 != ' ' && *src1 != '\n' && *src1 != '\t' ||
+           *src2 != '\0' && *src2 != ' ' && *src2 != '\n' && *src2 != '\t') {
+        if (*src1 != *src2) {
             return false;
         }
-        token++;
-        str++;
+        src1++;
+        src2++;
     }
     return true;
 }
@@ -114,24 +141,173 @@ void parse_primary(char** src_itr, node_t** node_itr) {
     if (token_eq(*src_itr, "(")) {
         parse_expr(src_itr, node_itr);
     } else if (token_isnum(*src_itr) == true) {
-        *((*node_itr)++) = (node_t){.inst = INST_PUSH_CONST, .token = *src_itr};
+        *((*node_itr)++) = (node_t){.inst = INST_PUSH_CONST, .token = *src_itr, .val = token_toint(*src_itr)};
         *src_itr = token_next(*src_itr);
     } else if (**src_itr == '&') {
         *src_itr = *src_itr + 1;
-        *((*node_itr)++) = (node_t){.inst = INST_PUSH_LOCAL_ADDR, .token = *src_itr};
+        *((*node_itr)++) = (node_t){.inst = INST_PUSH_LOCAL_ADDR, .token = *src_itr, .val = 0};
         *src_itr = token_next(*src_itr);
     } else {
-        *((*node_itr)++) = (node_t){.inst = INST_PUSH_LOCAL_VAL, .token = *src_itr};
+        *((*node_itr)++) = (node_t){.inst = INST_PUSH_LOCAL_VAL, .token = *src_itr, .val = 0};
         *src_itr = token_next(*src_itr);
     }
 }
 
-void parse_assign(char** src_itr, node_t** node_itr) {
-    parse_primary(src_itr, node_itr);
-    if (token_eq(*src_itr, "=")) {
+void parse_unary(char** src_itr, node_t** node_itr) {
+    if (token_eq(*src_itr, "*")) {
+        *src_itr = token_next(*src_itr);
+        parse_unary(src_itr, node_itr);
+        *((*node_itr)++) = (node_t){.inst = INST_DEREF, .token = NULL, .val = 0};
+    } else if (token_eq(*src_itr, "+")) {
         *src_itr = token_next(*src_itr);
         parse_primary(src_itr, node_itr);
-        *((*node_itr)++) = (node_t){.inst = INST_ASSIGN, .token = NULL};
+    } else if (token_eq(*src_itr, "-")) {
+        *((*node_itr)++) = (node_t){.inst = INST_PUSH_CONST, .token = NULL, .val = 0};
+        *src_itr = token_next(*src_itr);
+        parse_primary(src_itr, node_itr);
+        *((*node_itr)++) = (node_t){.inst = INST_SUB, .token = NULL, .val = 0};
+    } else if (token_eq(*src_itr, "!")) {  // !e = (e == 0) https://learn.microsoft.com/ja-jp/cpp/cpp/logical-negation-operator-exclpt?view=msvc-170
+        *((*node_itr)++) = (node_t){.inst = INST_PUSH_CONST, .token = NULL, .val = 0};
+        *src_itr = token_next(*src_itr);
+        parse_primary(src_itr, node_itr);
+        *((*node_itr)++) = (node_t){.inst = INST_EQ, .token = NULL, .val = 0};
+    } else if (token_eq(*src_itr, "~")) {
+        *((*node_itr)++) = (node_t){.inst = INST_PUSH_CONST, .token = NULL, .val = 0};
+        *src_itr = token_next(*src_itr);
+        parse_primary(src_itr, node_itr);
+        *((*node_itr)++) = (node_t){.inst = INST_BITNOT, .token = NULL, .val = 0};
+    } else {
+        parse_primary(src_itr, node_itr);
+    }
+}
+
+void parse_mul(char** src_itr, node_t** node_itr) {
+    parse_unary(src_itr, node_itr);
+    while (token_eq(*src_itr, "*") || token_eq(*src_itr, "/") || token_eq(*src_itr, "%")) {
+        char* op = *src_itr;
+        *src_itr = token_next(*src_itr);
+        parse_unary(src_itr, node_itr);
+        if (token_eq(op, "*")) {
+            *((*node_itr)++) = (node_t){.inst = INST_MUL, .token = NULL, .val = 0};
+        } else if (token_eq(op, "/")) {
+            *((*node_itr)++) = (node_t){.inst = INST_DIV, .token = NULL, .val = 0};
+        } else if (token_eq(op, "%")) {
+            *((*node_itr)++) = (node_t){.inst = INST_MOD, .token = NULL, .val = 0};
+        }
+    }
+}
+
+void parse_add(char** src_itr, node_t** node_itr) {
+    parse_mul(src_itr, node_itr);
+    while (token_eq(*src_itr, "+") || token_eq(*src_itr, "-")) {
+        char* op = *src_itr;
+        *src_itr = token_next(*src_itr);
+        parse_mul(src_itr, node_itr);
+        if (token_eq(op, "+")) {
+            *((*node_itr)++) = (node_t){.inst = INST_ADD, .token = NULL, .val = 0};
+        } else if (token_eq(op, "-")) {
+            *((*node_itr)++) = (node_t){.inst = INST_SUB, .token = NULL, .val = 0};
+        }
+    }
+}
+
+void parse_shift(char** src_itr, node_t** node_itr) {
+    parse_add(src_itr, node_itr);
+    while (token_eq(*src_itr, "<<") || token_eq(*src_itr, ">>")) {
+        char* op = *src_itr;
+        *src_itr = token_next(*src_itr);
+        parse_add(src_itr, node_itr);
+        if (token_eq(op, "<<")) {
+            *((*node_itr)++) = (node_t){.inst = INST_SHL, .token = NULL, .val = 0};
+        } else if (token_eq(op, ">>")) {
+            *((*node_itr)++) = (node_t){.inst = INST_SHR, .token = NULL, .val = 0};
+        }
+    }
+}
+
+void parse_rel(char** src_itr, node_t** node_itr) {
+    parse_shift(src_itr, node_itr);
+    while (token_eq(*src_itr, "<") || token_eq(*src_itr, "<=") || token_eq(*src_itr, ">") || token_eq(*src_itr, ">=")) {
+        char* op = *src_itr;
+        *src_itr = token_next(*src_itr);
+        parse_shift(src_itr, node_itr);
+        if (token_eq(op, "<")) {
+            *((*node_itr)++) = (node_t){.inst = INST_LT, .token = NULL, .val = 0};
+        } else if (token_eq(op, "<=")) {
+            *((*node_itr)++) = (node_t){.inst = INST_LE, .token = NULL, .val = 0};
+        } else if (token_eq(op, ">")) {
+            *((*node_itr)++) = (node_t){.inst = INST_GT, .token = NULL, .val = 0};
+        } else if (token_eq(op, ">=")) {
+            *((*node_itr)++) = (node_t){.inst = INST_GE, .token = NULL, .val = 0};
+        }
+    }
+}
+
+void parse_eq(char** src_itr, node_t** node_itr) {
+    parse_rel(src_itr, node_itr);
+    while (token_eq(*src_itr, "==") || token_eq(*src_itr, "!=")) {
+        char* op = *src_itr;
+        *src_itr = token_next(*src_itr);
+        parse_rel(src_itr, node_itr);
+        if (token_eq(op, "==")) {
+            *((*node_itr)++) = (node_t){.inst = INST_EQ, .token = NULL, .val = 0};
+        } else if (token_eq(op, "!=")) {
+            *((*node_itr)++) = (node_t){.inst = INST_NE, .token = NULL, .val = 0};
+        }
+    }
+}
+
+void parse_and(char** src_itr, node_t** node_itr) {
+    parse_eq(src_itr, node_itr);
+    while (token_eq(*src_itr, "&")) {
+        *src_itr = token_next(*src_itr);
+        parse_eq(src_itr, node_itr);
+        *((*node_itr)++) = (node_t){.inst = INST_BITAND, .token = NULL, .val = 0};
+    }
+}
+
+void parse_xor(char** src_itr, node_t** node_itr) {
+    parse_and(src_itr, node_itr);
+    while (token_eq(*src_itr, "^")) {
+        *src_itr = token_next(*src_itr);
+        parse_and(src_itr, node_itr);
+        *((*node_itr)++) = (node_t){.inst = INST_BITXOR, .token = NULL, .val = 0};
+    }
+}
+
+void parse_or(char** src_itr, node_t** node_itr) {
+    parse_xor(src_itr, node_itr);
+    while (token_eq(*src_itr, "|")) {
+        *src_itr = token_next(*src_itr);
+        parse_xor(src_itr, node_itr);
+        *((*node_itr)++) = (node_t){.inst = INST_BITOR, .token = NULL, .val = 0};
+    }
+}
+
+void parse_logical_and(char** src_itr, node_t** node_itr) {
+    parse_or(src_itr, node_itr);
+    while (token_eq(*src_itr, "&&")) {
+        *src_itr = token_next(*src_itr);
+        parse_or(src_itr, node_itr);
+        *((*node_itr)++) = (node_t){.inst = INST_AND, .token = NULL, .val = 0};
+    }
+}
+
+void parse_logical_or(char** src_itr, node_t** node_itr) {
+    parse_logical_and(src_itr, node_itr);
+    while (token_eq(*src_itr, "||")) {
+        *src_itr = token_next(*src_itr);
+        parse_logical_and(src_itr, node_itr);
+        *((*node_itr)++) = (node_t){.inst = INST_OR, .token = NULL, .val = 0};
+    }
+}
+
+void parse_assign(char** src_itr, node_t** node_itr) {
+    parse_logical_or(src_itr, node_itr);
+    while (token_eq(*src_itr, "=")) {
+        *src_itr = token_next(*src_itr);
+        parse_logical_or(src_itr, node_itr);
+        *((*node_itr)++) = (node_t){.inst = INST_ASSIGN, .token = NULL, .val = 0};
     }
 }
 
@@ -162,7 +338,7 @@ void tobin() {
         switch (node_itr->inst) {
             case INST_PUSH_CONST:
                 *(bin_itr++) = INST_PUSH_CONST;
-                *(bin_itr++) = token_toint(node_itr->token);
+                *(bin_itr++) = node_itr->val;
                 break;
             case INST_PUSH_LOCAL_VAL:
             case INST_PUSH_LOCAL_ADDR: {
@@ -181,10 +357,8 @@ void tobin() {
                     *(bin_itr++) = map_itr->value;
                 }
             } break;
-            case INST_ASSIGN:
-                *(bin_itr++) = INST_ASSIGN;
-                break;
             default:
+                *(bin_itr++) = node_itr->inst;
                 break;
         }
         node_itr++;
@@ -214,10 +388,130 @@ void exec() {
                 int32_t val = mem.i32[mem.i32[GLOBALMEM_IP]++];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val;
             } break;
+            case INST_DEREF: {
+                int32_t addr = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = mem.i32[addr];
+            } break;
             case INST_ASSIGN: {
                 int32_t val = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t addr = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[addr] = val;
+            } break;
+            case INST_CALL: {
+                int32_t addr = mem.i32[mem.i32[GLOBALMEM_IP]++];
+                mem.i32[--mem.i32[GLOBALMEM_SP]] = mem.i32[GLOBALMEM_BP];
+                mem.i32[GLOBALMEM_BP] = mem.i32[GLOBALMEM_SP];
+                mem.i32[GLOBALMEM_IP] = addr;
+            } break;
+            case INST_RETURN: {
+                mem.i32[GLOBALMEM_SP] = mem.i32[GLOBALMEM_BP];
+                mem.i32[GLOBALMEM_BP] = mem.i32[mem.i32[GLOBALMEM_SP]++];
+                mem.i32[GLOBALMEM_IP] = mem.i32[GLOBALMEM_SP];
+            } break;
+            case INST_JMP: {
+                int32_t addr = mem.i32[mem.i32[GLOBALMEM_IP]++];
+                mem.i32[GLOBALMEM_IP] = addr;
+            } break;
+            case INST_JMZ: {
+                int32_t addr = mem.i32[mem.i32[GLOBALMEM_IP]++];
+                int32_t val = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                if (val == 0) {
+                    mem.i32[GLOBALMEM_IP] = addr;
+                }
+            } break;
+            case INST_OR: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 | val2;
+            } break;
+            case INST_AND: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 & val2;
+            } break;
+            case INST_EQ: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 == val2;
+            } break;
+            case INST_NE: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 != val2;
+            } break;
+            case INST_LT: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 < val2;
+            } break;
+            case INST_LE: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 <= val2;
+            } break;
+            case INST_GT: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 > val2;
+            } break;
+            case INST_GE: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 >= val2;
+            } break;
+            case INST_ADD: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 + val2;
+            } break;
+            case INST_SUB: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 - val2;
+            } break;
+            case INST_MUL: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 * val2;
+            } break;
+            case INST_DIV: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 / val2;
+            } break;
+            case INST_MOD: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 % val2;
+            } break;
+            case INST_SHL: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 << val2;
+            } break;
+            case INST_SHR: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 >> val2;
+            } break;
+            case INST_BITAND: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 & val2;
+            } break;
+            case INST_BITOR: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 | val2;
+            } break;
+            case INST_BITXOR: {
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 ^ val2;
+            } break;
+            case INST_BITNOT: {
+                int32_t val = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = ~val;
             } break;
 
             default:
