@@ -18,6 +18,7 @@ This project was undertaken with significant self-imposed restrictions, primaril
 *   **Single Data Type:** The language and VM **only support `int32_t`**. All values, pointers, and addresses are represented as 32-bit integers.
 *   **Stack-Based "Arrays":** There is no built-in array type. Contiguous memory regions (simulating arrays) can be managed by directly manipulating the stack pointer (`sp`) and using pointer arithmetic.
     *   Example: To allocate a 10-element "array", you might get the starting address into a variable `&arr = * sp + 0` and then increment the stack pointer `*sp = *sp + 10`. Access would be `*(arr + index)`.
+    *   An example can be found in `/test/fibonacci2.txt`
 *   **Strict Tokenization:** All language tokens (keywords, operators, identifiers, numbers) **must** be separated by whitespace (space, tab, newline).
     *   **Exception:** The unary address-of operator (`&`) does *not* require preceding whitespace and can be directly attached to the identifier it modifies (e.g., `&my_var`).
 *   **Simple VM:** Executes custom bytecode on a straightforward stack-based virtual machine architecture with instruction pointer (`ip`), stack pointer (`sp`), and base pointer (`bp`).
