@@ -6,7 +6,7 @@
 This project was undertaken with significant self-imposed restrictions, primarily focusing on minimizing external dependencies and avoiding complex memory management.
 
 *   Commit messages for this project were primarily written by **GitHub Copilot**.
-*   This README was generated with assistance from **Google Gemini 2.5 Preview (model 20240305)** and the **project author**.
+*   This README and some testcode was generated with assistance from **Google Gemini 2.5 Preview (model 20240305)** and the **project author**.
 
 ## Key Features & Limitations
 

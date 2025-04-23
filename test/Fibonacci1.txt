@@ -1,0 +1,66 @@
+n print_int ( x ) {
+
+    // zero
+    if x == 0 {
+        write ( 1 48 )
+        write ( 1 10 )
+        return 0
+    }
+
+    // negative
+    if x < 0 {
+        write ( 1 45 )
+        &x = - x
+    }
+
+    // align Largest digit
+    &a = 1000000000
+    loop {
+        &b = x / a
+        if b != 0 {
+            break
+        }
+        &a = a / 10
+    }
+
+    // output numbers
+    loop {
+        &b = x / a % 10
+        write ( 1 b + 48 )
+        if a == 1 {
+            break
+        }
+        &a = a / 10
+    }
+
+    // line break
+    write ( 1 10 )
+    return 0
+}
+
+// f(0) = 0
+// f(1) = 1
+// f(n) = f(n-1) + f(n-2)
+fn fibonacci ( x ) {
+    if x == 0 {
+        return 0
+    }
+    if x == 1 {
+        return 1
+    }
+    return fibonacci ( x - 1 ) + fibonacci ( x - 2 )
+}
+
+
+&i = 1
+
+loop {
+
+    if i > 32 {
+        break
+    }
+
+    &status = print_int ( fibonacci ( i ) )
+
+    &i = i + 1
+}
