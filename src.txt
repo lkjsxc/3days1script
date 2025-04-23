@@ -1,22 +1,46 @@
-fn print_int ( c ) (
-    if c == 0 (
+fn print_int ( x ) (
+
+    // zero
+    if x == 0 (
         write ( 1 48 )
         write ( 1 10 )
         return 0
     )
-    if c < 0 (
+
+    // negative
+    if x < 0 (
         write ( 1 45 )
-        &c = - c
+        &x = - x
     )
-    write ( 1 c + 48 )
+
+    // align left
+    &a = 1000000000
+    loop (
+        &b = x / a
+        if b != 0 (
+            break
+        )
+        &a = a / 10
+    )
+
+    // output
+    loop (
+        &b = x / a % 10
+        write ( 1 b + 48 )
+        if a == 1 (
+            break
+        )
+        &a = a / 10
+    )
+
+    // line break
     write ( 1 10 )
     return 0
 )
 
-fn mul ( a b ) (
-    return a * b
-)
-
-&a = print_int ( 0 )
-&a = print_int ( 1 )
-&a = print_int ( -1 )
+// test
+&status = print_int ( 1 )   // default
+&status = print_int ( 0 )   // zero
+&status = print_int ( -1 )  // neg
+&status = print_int ( 57 )  // multiple digits
+&status = print_int ( -543 )    // neg multiple digits

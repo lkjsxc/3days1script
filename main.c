@@ -112,6 +112,16 @@ char* token_next(char* itr) {
     while (*itr == ' ' || *itr == '\n' || *itr == '\t') {
         itr++;
     }
+    if (*itr == '/' && *(itr + 1) == '/') {
+        while (*itr == '/' && *(itr + 1) == '/') {
+            while (*itr != '\n' && *itr != '\0') {
+                itr++;
+            }
+            while (*itr == ' ' || *itr == '\n' || *itr == '\t') {
+                itr++;
+            }
+        }
+    }
     return itr;
 }
 
