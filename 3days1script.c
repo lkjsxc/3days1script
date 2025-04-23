@@ -86,6 +86,7 @@ union {
 } mem;
 
 void parse_expr(int label_break, int label_continue);
+void parse_stat(int label_break, int label_continue);
 
 status_t readsrc(const char* src_path) {
     FILE* file = fopen(src_path, "r");
@@ -185,6 +186,22 @@ void parse_primary(int label_break, int label_continue) {
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
         parse_expr(label_break, label_continue);
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_READ, .token = NULL, .val = 0};
+    } else if (token_eq(mem.compile_data.src_itr, "if")) {
+        int label_if = mem.compile_data.label_cnt++;
+        int label_else = mem.compile_data.label_cnt++;
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_expr(label_break, label_continue);  // conditional expression
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JZE, .token = NULL, .val = label_if};
+        parse_stat(label_break, label_continue);  // when true
+        if (token_eq(mem.compile_data.src_itr, "else")) {
+            mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMP, .token = NULL, .val = label_else};
+            *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_if};
+            parse_stat(label_break, label_continue);  // when false
+            *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_else};
+        } else {
+            *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_if};
+        }
     } else if (token_eq(token_next(mem.compile_data.src_itr), "(")) {
         char* fn_name = mem.compile_data.src_itr;
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
@@ -373,22 +390,6 @@ void parse_stat(int label_break, int label_continue) {
             parse_stat(label_break, label_continue);
         }
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-    } else if (token_eq(mem.compile_data.src_itr, "if")) {
-        int label_if = mem.compile_data.label_cnt++;
-        int label_else = mem.compile_data.label_cnt++;
-        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-        parse_expr(label_break, label_continue);  // conditional expression
-        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JZE, .token = NULL, .val = label_if};
-        parse_stat(label_break, label_continue);  // when true
-        if (token_eq(mem.compile_data.src_itr, "else")) {
-            mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMP, .token = NULL, .val = label_else};
-            *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_if};
-            parse_stat(label_break, label_continue);  // when false
-            *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_else};
-        } else {
-            *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_if};
-        }
     } else if (token_eq(mem.compile_data.src_itr, "loop")) {
         int label_start = mem.compile_data.label_cnt++;
         int label_end = mem.compile_data.label_cnt++;
