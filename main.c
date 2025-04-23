@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#define src_path "./src.txt"
 #define MEM_SIZE (1024 * 1024 * 2)
 #define GLOBALMEM_SIZE 16
 #define DEFAULT_STACK_SIZE 128
@@ -88,7 +87,7 @@ union {
 
 void parse_expr(int label_break, int label_continue);
 
-status_t readsrc() {
+status_t readsrc(const char* src_path) {
     FILE* file = fopen(src_path, "r");
     char* body = mem.compile_data.src + 1;
     if (file == NULL) {
@@ -718,8 +717,12 @@ void exec() {
     }
 }
 
-int main() {
-    if (readsrc() == NG) {
+int main(int argc, char* argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
+        return 1;
+    }
+    if (readsrc(argv[1]) == NG) {
         return 1;
     }
     compile();
