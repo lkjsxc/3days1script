@@ -1,9 +1,9 @@
-fn add ( a b ) (
-    return a + b
+fn mul ( a b ) (
+    return a * b
 )
 
 fn main ( ) (
-    5 = add ( 1 2 )
+    5 = mul ( 6 111111 )
 )
 
 fn eternal_sleep ( ) (

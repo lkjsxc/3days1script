@@ -386,7 +386,7 @@ void parse() {
         }
         node_t* arg_itr = mem.compile_data.node_itr - 1;
         for (int i = 0; i < arg_cnt; i++) {
-            arg_itr->val = arg_cnt - i - 6;
+            arg_itr->val = - i - 4;
             arg_itr--;
         }
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
@@ -489,7 +489,7 @@ void tobin() {
                     localval_cnt++;
                     node_itr->val = mem.compile_data.map[i].value;
                 }
-                *(node_itr->bin+1) = node_itr->val;
+                *(node_itr->bin + 1) = node_itr->val;
             } break;
         }
         node_itr++;
@@ -538,9 +538,11 @@ void exec() {
                 mem.i32[GLOBALMEM_SP] += DEFAULT_STACK_SIZE;
             } break;
             case INST_RETURN: {
-                mem.i32[GLOBALMEM_SP] = mem.i32[GLOBALMEM_BP-1];
-                mem.i32[GLOBALMEM_BP] = mem.i32[mem.i32[GLOBALMEM_SP]++];
-                mem.i32[GLOBALMEM_IP] = mem.i32[GLOBALMEM_SP];
+                int32_t ret_val = mem.i32[mem.i32[GLOBALMEM_SP] - 1];
+                mem.i32[GLOBALMEM_IP] = mem.i32[mem.i32[GLOBALMEM_BP]-3];
+                mem.i32[GLOBALMEM_SP] = mem.i32[mem.i32[GLOBALMEM_BP]-2];
+                mem.i32[GLOBALMEM_BP] = mem.i32[mem.i32[GLOBALMEM_BP]-1];
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = ret_val;
             } break;
             case INST_JMP: {
                 int32_t addr = mem.i32[mem.i32[GLOBALMEM_IP]++];
@@ -554,93 +556,93 @@ void exec() {
                 }
             } break;
             case INST_OR: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 | val2;
             } break;
             case INST_AND: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 & val2;
             } break;
             case INST_EQ: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 == val2;
             } break;
             case INST_NE: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 != val2;
             } break;
             case INST_LT: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 < val2;
             } break;
             case INST_LE: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 <= val2;
             } break;
             case INST_GT: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 > val2;
             } break;
             case INST_GE: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 >= val2;
             } break;
             case INST_ADD: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 + val2;
             } break;
             case INST_SUB: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 - val2;
             } break;
             case INST_MUL: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 * val2;
             } break;
             case INST_DIV: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 / val2;
             } break;
             case INST_MOD: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 % val2;
             } break;
             case INST_SHL: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 << val2;
             } break;
             case INST_SHR: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 >> val2;
             } break;
             case INST_BITAND: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 & val2;
             } break;
             case INST_BITOR: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 | val2;
             } break;
             case INST_BITXOR: {
-                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 ^ val2;
             } break;
             case INST_BITNOT: {
