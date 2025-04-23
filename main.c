@@ -153,14 +153,14 @@ void parse_primary(int label_break, int label_continue) {
         int label_if = mem.compile_data.label_cnt++;
         int label_else = mem.compile_data.label_cnt++;
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-        parse_expr(label_break, label_continue);
+        parse_expr(label_break, label_continue);    // conditional expression
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMZ, .token = NULL, .val = label_if};
+        parse_expr(label_break, label_continue);    // when true
         if (token_eq(mem.compile_data.src_itr, "else")) {
             mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-            parse_expr(label_break, label_continue);
             *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMP, .token = NULL, .val = label_else};
             *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_if};
-            parse_expr(label_break, label_continue);
+            parse_expr(label_break, label_continue);    // when false
             *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_else};
         } else {
             *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_if};
@@ -395,15 +395,9 @@ void tobin() {
 
     node_itr = mem.compile_data.node;
     while (node_itr->inst != INST_NULL) {
-        switch (node_itr->inst) {
-            case LABEL:
-            case LABEL_FNEND:
-                mem.compile_data.map[mem.compile_data.label_cnt].key = node_itr->token;
-                mem.compile_data.map[mem.compile_data.label_cnt].value = bin_itr - mem.compile_data.bin;
-                mem.compile_data.label_cnt++;
-                break;
-            default:
-                break;
+        if(node_itr->inst == INST_JMP || node_itr->inst == INST_JMZ) {
+            int32_t addr = mem.compile_data.map[node_itr->val].value;
+            *(node_itr->bin + 1) = addr;
         }
         node_itr++;
     }
