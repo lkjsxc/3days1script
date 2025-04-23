@@ -3,9 +3,9 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#define MEM_SIZE (1024 * 1024 * 2)
+#define MEM_SIZE (1024 * 1024 * 64)
 #define GLOBALMEM_SIZE 16
-#define DEFAULT_STACK_SIZE 128
+#define DEFAULT_STACK_SIZE 256
 
 typedef enum {
     OK,
@@ -127,7 +127,7 @@ char* token_next(char* itr) {
 }
 
 bool token_eq(char* src1, char* src2) {
-    if(src1 == NULL || src2 == NULL) {
+    if (src1 == NULL || src2 == NULL) {
         return false;
     }
     while (*src1 != '\0' && *src1 != ' ' && *src1 != '\n' && *src1 != '\t' ||
@@ -177,6 +177,14 @@ void parse_primary(int label_break, int label_continue) {
     } else if (token_isnum(mem.compile_data.src_itr) == true) {
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_CONST, .token = mem.compile_data.src_itr, .val = token_toint(mem.compile_data.src_itr)};
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+    } else if (token_eq(mem.compile_data.src_itr, "write")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_expr(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_WRITE, .token = NULL, .val = 0};
+    } else if (token_eq(mem.compile_data.src_itr, "read")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_expr(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_READ, .token = NULL, .val = 0};
     } else if (token_eq(token_next(mem.compile_data.src_itr), "(")) {
         char* fn_name = mem.compile_data.src_itr;
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
@@ -399,14 +407,6 @@ void parse_stat(int label_break, int label_continue) {
     } else if (token_eq(mem.compile_data.src_itr, "continue")) {
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMP, .token = NULL, .val = label_continue};
-    } else if (token_eq(mem.compile_data.src_itr, "write")) {
-        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-        parse_stat(label_break, label_continue);
-        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_WRITE, .token = NULL, .val = 0};
-    } else if (token_eq(mem.compile_data.src_itr, "read")) {
-        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-        parse_expr(label_break, label_continue);
-        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_READ, .token = NULL, .val = 0};
     } else {
         parse_expr(label_break, label_continue);
     }

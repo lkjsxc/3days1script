@@ -1,0 +1,167 @@
+generate typing practice game in my original language.
+- int only.
+- there is not tokenizer. need split space or linebreak only all tokens. don't need comma.
+- First define the functions, then write the processing.
+
+<example>
+// ========================================================================
+// Function Definitions
+// ========================================================================
+
+// Function to calculate Mandelbrot iterations for a given point
+// Input: Scaled complex coordinates Cr_int Ci_int
+// Output: Iteration count n (or max_iter if it doesn't escape)
+fn mandelbrot_iter ( Cr_int Ci_int max_iter scale escape_radius_sq_int ) {
+
+    // Initial Z = 0 + 0i
+    &Zr_int = 0
+    &Zi_int = 0
+
+    // Temporary variables for Z_new
+    &Zr_new_int = 0
+    &Zi_new_int = 0
+
+    // Iteration counter
+    &n = 0
+
+    loop {
+        // Check if max iterations reached
+        if n == max_iter {
+            break
+        }
+
+        // Check escape condition: Zr*Zr + Zi*Zi > escape_radius (scaled)
+        // Note: Need intermediate variables to avoid potential overflow if language doesn't guarantee calculation order
+        &Zr_sq = Zr_int * Zr_int
+        &Zi_sq = Zi_int * Zi_int
+        &mag_sq_scaled = Zr_sq / scale + Zi_sq / scale // Dividing first reduces overflow risk slightly
+
+        if mag_sq_scaled > escape_radius_sq_int {
+            break // Escaped
+        }
+
+        // Calculate next Z = Z*Z + C (using fixed-point arithmetic)
+        // Zr_new = (Zr*Zr - Zi*Zi) / scale + Cr
+        // Zi_new = (2*Zr*Zi) / scale + Ci
+
+        // Calculate intermediate terms carefully
+        &ZrZi_scaled = Zr_int * Zi_int / scale // (Zr*Zi) / scale
+        &two_ZrZi_scaled = 2 * ZrZi_scaled    // 2*(Zr*Zi) / scale
+
+        // Calculate Zr_new_int
+        &Zr_sq_scaled = Zr_sq / scale // (Zr*Zr) / scale
+        &Zi_sq_scaled = Zi_sq / scale // (Zi*Zr) / scale
+        &Zr_term = Zr_sq_scaled - Zi_sq_scaled
+        &Zr_new_int = Zr_term + Cr_int
+
+        // Calculate Zi_new_int
+        &Zi_new_int = two_ZrZi_scaled + Ci_int
+
+        // Update Z
+        &Zr_int = Zr_new_int
+        &Zi_int = Zi_new_int
+
+        // Increment iteration counter
+        &n = n + 1
+    }
+
+    // Return the number of iterations
+    return n
+}
+
+
+// ========================================================================
+// Main Processing Logic
+// ========================================================================
+
+// --- Configuration ---
+
+// Screen dimensions (integer)
+&WIDTH = 80
+&HEIGHT = 40 // Keep height smaller for console aspect ratio
+
+// Mandelbrot parameters
+&MAX_ITER = 50
+
+// Fixed-point arithmetic scale factor
+&SCALE = 1000 // Represents 1.0 as 1000
+
+// Escape radius squared ( 4.0 ) scaled
+// escape_radius_sq_int = 4 * SCALE * SCALE / SCALE = 4 * SCALE
+// Let's stick to the theoretical derivation: check Zr*Zr + Zi*Zi > 4*SCALE*SCALE
+// But need to scale the check itself: Zr_int*Zr_int/SCALE + Zi_int*Zi_int/SCALE > 4*SCALE
+&ESCAPE_RADIUS_SQ_INT = 4 * SCALE // Scaled escape radius squared check value
+
+// Complex plane view window (scaled integers)
+// Real axis: -2.0 to 1.0
+// Imaginary axis: -1.2 to 1.2 (adjust for aspect ratio)
+&MIN_R_INT = -2000 // -2.0 * SCALE
+&MAX_R_INT = 1000  //  1.0 * SCALE
+&MIN_I_INT = -1200 // -1.2 * SCALE
+&MAX_I_INT = 1200  //  1.2 * SCALE
+
+// Calculate range spans (scaled)
+&R_RANGE_INT = MAX_R_INT - MIN_R_INT // 1000 - (-2000) = 3000
+&I_RANGE_INT = MAX_I_INT - MIN_I_INT // 1200 - (-1200) = 2400
+
+
+// --- Pixel Iteration ---
+
+// Pixel coordinates (y-axis)
+&py = 0
+loop {
+    // Check if finished all rows
+    if py == HEIGHT {
+        break
+    }
+
+    // Pixel coordinates (x-axis)
+    &px = 0
+    loop {
+        // Check if finished this row
+        if px == WIDTH {
+            break
+        }
+
+        // Map pixel (px py) to complex plane coordinates (Cr_int Ci_int)
+        // Cr = MIN_R + px * (R_RANGE / WIDTH)
+        // Ci = MIN_I + py * (I_RANGE / HEIGHT)  (Note: Increasing py usually maps to decreasing Ci in plots)
+        // Let's map increasing py to increasing Ci for now.
+
+        // Calculate Cr_int = MIN_R_INT + px * R_RANGE_INT / WIDTH
+        &Cr_term = px * R_RANGE_INT
+        &Cr_int = MIN_R_INT + Cr_term / WIDTH
+
+        // Calculate Ci_int = MIN_I_INT + py * I_RANGE_INT / HEIGHT
+        &Ci_term = py * I_RANGE_INT
+        &Ci_int = MIN_I_INT + Ci_term / HEIGHT
+
+
+        // Calculate Mandelbrot iterations for this point
+        &iterations = mandelbrot_iter ( Cr_int Ci_int MAX_ITER SCALE ESCAPE_RADIUS_SQ_INT )
+
+
+        // Determine character to print based on iterations
+        // Inside the set (escaped == MAX_ITER) -> '*' (ASCII 42)
+        // Outside the set (escaped < MAX_ITER) -> ' ' (ASCII 32)
+
+        if iterations == MAX_ITER {
+            write ( 1 42 ) // '*' character
+        } else {
+            write ( 1 32 ) // ' ' character
+        }
+
+        // Move to next pixel column
+        &px = px + 1
+    }
+
+    // End of row print newline (ASCII 10)
+    write ( 1 10 )
+
+    // Move to next pixel row
+    &py = py + 1
+}
+
+// End of program (optional: return a status like the example)
+// &status = 0 // Assuming no explicit top-level return needed
+</example>

@@ -1,0 +1,70 @@
+generate Mandelbrot set in my original language.
+- int only.
+- there is not tokenizer. need split space or linebreak only all tokens. don't need comma.
+- First define the functions, then write the processing.
+
+<example>
+fn print_bit ( x ) {
+    &i = 0
+    loop {
+        if i == 32 {
+            break
+        }
+        if x & ( 1 << 31 ) {
+            write ( 1 49 )
+        } else {
+            write ( 1 48 )
+        }
+        &x = x << 1
+        &i = i + 1
+    }
+}
+
+fn print_int ( x ) {
+
+    // zero
+    if x == 0 {
+        write ( 1 48 )
+        write ( 1 10 )
+        return 0
+    }
+
+    // negative
+    if x < 0 {
+        write ( 1 45 )
+        &x = - x
+    }
+
+    // align left
+    &a = 1000000000
+    loop {
+        &b = x / a
+        if b != 0 {
+            break
+        }
+        &a = a / 10
+    }
+
+    // output
+    loop {
+        &b = x / a % 10
+        write ( 1 b + 48 )
+        if a == 1 {
+            break
+        }
+        &a = a / 10
+    }
+
+    // line break
+    write ( 1 10 )
+    return 0
+}
+
+// test
+&status = print_int ( 1 )   // default
+&status = print_int ( 0 )   // zero
+&status = print_int ( -1 )  // neg
+&status = print_int ( 57 )  // multiple digits
+&status = print_int ( -543 )    // neg multiple digits
+&status = print_bit ( 15 )
+</example>
