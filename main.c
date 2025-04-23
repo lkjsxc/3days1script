@@ -128,6 +128,9 @@ char* token_next(char* itr) {
 }
 
 bool token_eq(char* src1, char* src2) {
+    if(src1 == NULL || src2 == NULL) {
+        return false;
+    }
     while (*src1 != '\0' && *src1 != ' ' && *src1 != '\n' && *src1 != '\t' ||
            *src2 != '\0' && *src2 != ' ' && *src2 != '\n' && *src2 != '\t') {
         if (*src1 != *src2) {
