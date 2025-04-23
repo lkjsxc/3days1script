@@ -22,7 +22,7 @@ typedef enum {
     INST_CALL,
     INST_RETURN,
     INST_JMP,
-    INST_JMZ,
+    INST_JZE,
     INST_OR,
     INST_AND,
     INST_EQ,
@@ -153,7 +153,7 @@ void parse_primary(int label_break, int label_continue) {
         int label_else = mem.compile_data.label_cnt++;
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
         parse_expr(label_break, label_continue);  // conditional expression
-        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMZ, .token = NULL, .val = label_if};
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JZE, .token = NULL, .val = label_if};
         parse_expr(label_break, label_continue);  // when true
         if (token_eq(mem.compile_data.src_itr, "else")) {
             mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
@@ -368,6 +368,7 @@ void tobin() {
     int32_t* bin_itr = bin_begin;
     int32_t localval_cnt = 0;
 
+    // assigning bin to node
     node_t* node_itr = mem.compile_data.node;
     while (node_itr->inst != INST_NULL) {
         node_itr->bin = bin_itr;
@@ -379,7 +380,7 @@ void tobin() {
                 *bin_itr++ = node_itr->val;
                 break;
             case INST_JMP:
-            case INST_JMZ:
+            case INST_JZE:
                 *bin_itr++ = node_itr->inst;
                 *bin_itr++ = 0;
                 break;
@@ -394,15 +395,17 @@ void tobin() {
         node_itr++;
     }
 
+    // JMP JZE
     node_itr = mem.compile_data.node;
     while (node_itr->inst != INST_NULL) {
-        if (node_itr->inst == INST_JMP || node_itr->inst == INST_JMZ) {
+        if (node_itr->inst == INST_JMP || node_itr->inst == INST_JZE) {
             int32_t addr = mem.compile_data.map[node_itr->val].value;
             *(node_itr->bin + 1) = addr;
         }
         node_itr++;
     }
 
+    // local variable
     node_itr = mem.compile_data.node;
     while (node_itr->inst != INST_NULL) {
         switch (node_itr->inst) {
@@ -477,7 +480,7 @@ void exec() {
                 int32_t addr = mem.i32[mem.i32[GLOBALMEM_IP]++];
                 mem.i32[GLOBALMEM_IP] = addr;
             } break;
-            case INST_JMZ: {
+            case INST_JZE: {
                 int32_t addr = mem.i32[mem.i32[GLOBALMEM_IP]++];
                 int32_t val = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 if (val == 0) {
