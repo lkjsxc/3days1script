@@ -19,7 +19,6 @@ typedef enum {
 
 typedef enum {
     INST_NULL,
-    INST_PUSH_GLOBAL_VAL,
     INST_PUSH_LOCAL_VAL,
     INST_PUSH_LOCAL_ADDR,
     INST_PUSH_CONST,
@@ -63,6 +62,7 @@ typedef struct {
     type_t inst;
     char* token;
     int32_t val;
+    int32_t* bin;
 } node_t;
 
 typedef struct {
@@ -76,10 +76,10 @@ union {
         int32_t bin[MEM_SIZE / sizeof(int32_t) / 4];
         char src[MEM_SIZE / sizeof(char) / 4];
         node_t node[MEM_SIZE / sizeof(node_t) / 4];
-        cipair_t map[MEM_SIZE / sizeof(cipair_t) / 4];
+        cipair_t map[MEM_SIZE / sizeof(cipair_t) / 4];  // 0 ~ label_cnt-1: key is Null, label_cnt ~ label_cnt+localval_cnt-1: key is token
         char* src_itr;
         node_t* node_itr;
-        int32_t map_size;
+        int32_t label_cnt;
     } compile_data;
 } mem;
 
@@ -149,6 +149,22 @@ void parse_primary(int label_break, int label_continue) {
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
     } else if (token_eq(mem.compile_data.src_itr, "(")) {
         parse_expr(label_break, label_continue);
+    } else if (token_eq(mem.compile_data.src_itr, "if")) {
+        int label_if = mem.compile_data.label_cnt++;
+        int label_else = mem.compile_data.label_cnt++;
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_expr(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMZ, .token = NULL, .val = label_if};
+        if (token_eq(mem.compile_data.src_itr, "else")) {
+            mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+            parse_expr(label_break, label_continue);
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMP, .token = NULL, .val = label_else};
+            *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_if};
+            parse_expr(label_break, label_continue);
+            *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_else};
+        } else {
+            *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_if};
+        }
     } else if (token_eq(mem.compile_data.src_itr, "return")) {
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
         parse_expr(label_break, label_continue);
@@ -341,44 +357,81 @@ void parse_expr(int label_break, int label_continue) {
 void parse() {
     mem.compile_data.src_itr = mem.compile_data.src;
     mem.compile_data.node_itr = mem.compile_data.node;
-    mem.compile_data.map_size = 0;
+    mem.compile_data.label_cnt = 0;
     parse_expr(-1, -1);
     *mem.compile_data.node_itr = (node_t){.inst = INST_NULL, .token = NULL};
 }
 
 void tobin() {
-    node_t* node_itr = mem.compile_data.node;
-    int32_t* bin_itr = mem.compile_data.bin + GLOBALMEM_SIZE;
+    int32_t* bin_begin = mem.compile_data.bin + GLOBALMEM_SIZE;
+    int32_t* bin_itr = bin_begin;
     int32_t localval_cnt = 0;
+    
+    node_t* node_itr = mem.compile_data.node;
     while (node_itr->inst != INST_NULL) {
+        node_itr->bin = bin_itr;
         switch (node_itr->inst) {
             case INST_PUSH_CONST:
-                *(bin_itr++) = INST_PUSH_CONST;
-                *(bin_itr++) = node_itr->val;
-                break;
             case INST_PUSH_LOCAL_VAL:
-            case INST_PUSH_LOCAL_ADDR: {
-                cipair_t* map_itr = mem.compile_data.map;
-                while (map_itr->key != NULL) {
-                    if (token_eq(node_itr->token, map_itr->key)) {
-                        *(bin_itr++) = INST_PUSH_LOCAL_VAL;
-                        *(bin_itr++) = map_itr->value;
-                        break;
-                    }
-                    map_itr++;
-                }
-                if (map_itr->key == NULL) {
-                    *(map_itr) = (cipair_t){.key = node_itr->token, .value = localval_cnt++};
-                    *(bin_itr++) = node_itr->inst;
-                    *(bin_itr++) = map_itr->value;
-                }
-            } break;
+            case INST_PUSH_LOCAL_ADDR:
+                *bin_itr++ = node_itr->inst;
+                *bin_itr++ = node_itr->val;
+                break;
+            case INST_JMP:
+            case INST_JMZ:
+                *bin_itr++ = node_itr->inst;
+                *bin_itr++ = 0;
+                break;
+            case LABEL:
+            case LABEL_FNEND:
+                mem.compile_data.map[node_itr->val] = (cipair_t){.key = NULL, .value = bin_itr - mem.compile_data.bin};
+                break;
             default:
-                *(bin_itr++) = node_itr->inst;
+                *bin_itr++ = node_itr->inst;
                 break;
         }
         node_itr++;
     }
+
+    node_itr = mem.compile_data.node;
+    while (node_itr->inst != INST_NULL) {
+        switch (node_itr->inst) {
+            case LABEL:
+            case LABEL_FNEND:
+                mem.compile_data.map[mem.compile_data.label_cnt].key = node_itr->token;
+                mem.compile_data.map[mem.compile_data.label_cnt].value = bin_itr - mem.compile_data.bin;
+                mem.compile_data.label_cnt++;
+                break;
+            default:
+                break;
+        }
+        node_itr++;
+    }
+
+    node_itr = mem.compile_data.node;
+    while (node_itr->inst != INST_NULL) {
+        switch (node_itr->inst) {
+            case LABEL_FNEND:
+                localval_cnt = 0;
+                break;
+            case INST_PUSH_LOCAL_VAL:
+            case INST_PUSH_LOCAL_ADDR: {
+                int32_t i;
+                for (i = mem.compile_data.label_cnt; i < mem.compile_data.label_cnt + localval_cnt; i++) {
+                    if (token_eq(mem.compile_data.map[i].key, node_itr->token)) {
+                        node_itr->val = mem.compile_data.map[i].value;
+                        break;
+                    }
+                }
+                if (i == mem.compile_data.label_cnt + localval_cnt) {
+                    mem.compile_data.map[i] = (cipair_t){.key = node_itr->token, .value = localval_cnt};
+                    localval_cnt++;
+                }
+            } break;
+        }
+        node_itr++;
+    }
+
     mem.i32[GLOBALMEM_IP] = GLOBALMEM_SIZE;
     mem.i32[GLOBALMEM_BP] = bin_itr - mem.compile_data.bin;
     mem.i32[GLOBALMEM_SP] = mem.i32[GLOBALMEM_BP] + DEFAULT_STACK_SIZE;
