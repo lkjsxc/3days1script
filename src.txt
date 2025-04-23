@@ -1,42 +1,42 @@
-fn print_int ( x ) (
+fn print_int ( x ) {
 
     // zero
-    if x == 0 (
+    if x == 0 {
         write ( 1 48 )
         write ( 1 10 )
         return 0
-    )
+    }
 
     // negative
-    if x < 0 (
+    if x < 0 {
         write ( 1 45 )
         &x = - x
-    )
+    }
 
     // align left
     &a = 1000000000
-    loop (
+    loop {
         &b = x / a
-        if b != 0 (
+        if b != 0 {
             break
-        )
+        }
         &a = a / 10
-    )
+    }
 
     // output
-    loop (
+    loop {
         &b = x / a % 10
         write ( 1 b + 48 )
-        if a == 1 (
+        if a == 1 {
             break
-        )
+        }
         &a = a / 10
-    )
+    }
 
     // line break
     write ( 1 10 )
     return 0
-)
+}
 
 // test
 &status = print_int ( 1 )   // default

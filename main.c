@@ -4,7 +4,7 @@
 #include <unistd.h>
 
 #define src_path "./src.txt"
-#define MEM_SIZE 65536
+#define MEM_SIZE (1024 * 1024 * 2)
 #define GLOBALMEM_SIZE 16
 #define DEFAULT_STACK_SIZE 128
 
@@ -90,18 +90,20 @@ void parse_expr(int label_break, int label_continue);
 
 status_t readsrc() {
     FILE* file = fopen(src_path, "r");
+    char* body = mem.compile_data.src + 1;
     if (file == NULL) {
         perror("Error opening file");
         return NG;
     }
-    size_t bytes_read = fread(mem.compile_data.src, sizeof(char), MEM_SIZE, file);
+    mem.compile_data.src[0] = ' ';
+    size_t bytes_read = fread(body, sizeof(char), MEM_SIZE, file);
     if (bytes_read == 0) {
         perror("Error reading file");
         fclose(file);
         return NG;
     }
-    mem.compile_data.src[bytes_read] = '\n';
-    mem.compile_data.src[bytes_read + 1] = '\0';
+    body[bytes_read] = '\n';
+    body[bytes_read + 1] = '\0';
     fclose(file);
 }
 
@@ -170,51 +172,9 @@ void parse_primary(int label_break, int label_continue) {
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
     } else if (token_eq(mem.compile_data.src_itr, "(")) {
         parse_expr(label_break, label_continue);
-    } else if (token_eq(mem.compile_data.src_itr, "if")) {
-        int label_if = mem.compile_data.label_cnt++;
-        int label_else = mem.compile_data.label_cnt++;
-        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-        parse_expr(label_break, label_continue);  // conditional expression
-        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JZE, .token = NULL, .val = label_if};
-        parse_expr(label_break, label_continue);  // when true
-        if (token_eq(mem.compile_data.src_itr, "else")) {
-            mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMP, .token = NULL, .val = label_else};
-            *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_if};
-            parse_expr(label_break, label_continue);  // when false
-            *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_else};
-        } else {
-            *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_if};
-        }
-    } else if (token_eq(mem.compile_data.src_itr, "loop")) {
-        int label_start = mem.compile_data.label_cnt++;
-        int label_end = mem.compile_data.label_cnt++;
-        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-        *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_start};
-        parse_expr(label_end, label_start);
-        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMP, .token = NULL, .val = label_start};
-        *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_end};
-    } else if (token_eq(mem.compile_data.src_itr, "return")) {
-        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-        parse_expr(label_break, label_continue);
-        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_RETURN, .token = NULL, .val = 0};
-    } else if (token_eq(mem.compile_data.src_itr, "break")) {
-        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMP, .token = NULL, .val = label_break};
-    } else if (token_eq(mem.compile_data.src_itr, "continue")) {
-        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMP, .token = NULL, .val = label_continue};
     } else if (token_isnum(mem.compile_data.src_itr) == true) {
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_CONST, .token = mem.compile_data.src_itr, .val = token_toint(mem.compile_data.src_itr)};
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-    } else if (token_eq(mem.compile_data.src_itr, "write")) {
-        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-        parse_expr(label_break, label_continue);
-        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_WRITE, .token = NULL, .val = 0};
-    } else if (token_eq(mem.compile_data.src_itr, "read")) {
-        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-        parse_expr(label_break, label_continue);
-        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_READ, .token = NULL, .val = 0};
     } else if (token_eq(token_next(mem.compile_data.src_itr), "(")) {
         char* fn_name = mem.compile_data.src_itr;
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
@@ -396,10 +356,65 @@ void parse_expr(int label_break, int label_continue) {
     }
 }
 
+void parse_stat(int label_break, int label_continue) {
+    if (token_eq(mem.compile_data.src_itr, "{")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        while (!token_eq(mem.compile_data.src_itr, "}")) {
+            parse_stat(label_break, label_continue);
+        }
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+    } else if (token_eq(mem.compile_data.src_itr, "if")) {
+        int label_if = mem.compile_data.label_cnt++;
+        int label_else = mem.compile_data.label_cnt++;
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_expr(label_break, label_continue);  // conditional expression
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JZE, .token = NULL, .val = label_if};
+        parse_stat(label_break, label_continue);  // when true
+        if (token_eq(mem.compile_data.src_itr, "else")) {
+            mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMP, .token = NULL, .val = label_else};
+            *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_if};
+            parse_stat(label_break, label_continue);  // when false
+            *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_else};
+        } else {
+            *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_if};
+        }
+    } else if (token_eq(mem.compile_data.src_itr, "loop")) {
+        int label_start = mem.compile_data.label_cnt++;
+        int label_end = mem.compile_data.label_cnt++;
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_start};
+        parse_stat(label_end, label_start);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMP, .token = NULL, .val = label_start};
+        *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_end};
+    } else if (token_eq(mem.compile_data.src_itr, "return")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_expr(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_RETURN, .token = NULL, .val = 0};
+    } else if (token_eq(mem.compile_data.src_itr, "break")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMP, .token = NULL, .val = label_break};
+    } else if (token_eq(mem.compile_data.src_itr, "continue")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMP, .token = NULL, .val = label_continue};
+    } else if (token_eq(mem.compile_data.src_itr, "write")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_stat(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_WRITE, .token = NULL, .val = 0};
+    } else if (token_eq(mem.compile_data.src_itr, "read")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_expr(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_READ, .token = NULL, .val = 0};
+    } else {
+        parse_expr(label_break, label_continue);
+    }
+}
+
 void parse() {
     mem.compile_data.src_itr = mem.compile_data.src;
     mem.compile_data.node_itr = mem.compile_data.node;
     mem.compile_data.label_cnt = 0;
+    mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
     while (token_eq(mem.compile_data.src_itr, "fn")) {
         int label_start = mem.compile_data.label_cnt++;
         int arg_cnt = 0;
@@ -425,14 +440,14 @@ void parse() {
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_CONST, .token = NULL, .val = arg_cnt};
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_SUB, .token = NULL, .val = 0};
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_ASSIGN, .token = NULL, .val = 0};
-        parse_expr(-1, -1);
+        parse_stat(-1, -1);
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_CONST, .token = NULL, .val = 0};
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_RETURN, .token = NULL, .val = 0};
         *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL_CLEANLOCAL, .token = NULL, .val = label_start};
     }
     *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL_START, .token = NULL, .val = 0};
     while (*mem.compile_data.src_itr != '\0') {
-        parse_expr(-1, -1);
+        parse_stat(-1, -1);
     }
     *mem.compile_data.node_itr = (node_t){.inst = INST_NULL, .token = NULL};
 }
@@ -643,7 +658,11 @@ void exec() {
             case INST_DIV: {
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 int32_t val1 = mem.i32[--mem.i32[GLOBALMEM_SP]];
-                mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 / val2;
+                if (val2 == 0) {
+                    mem.i32[mem.i32[GLOBALMEM_SP]++] = 0;
+                } else {
+                    mem.i32[mem.i32[GLOBALMEM_SP]++] = val1 / val2;
+                }
             } break;
             case INST_MOD: {
                 int32_t val2 = mem.i32[--mem.i32[GLOBALMEM_SP]];
