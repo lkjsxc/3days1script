@@ -43,7 +43,8 @@ typedef enum {
     INST_BITXOR,
     INST_BITNOT,
     LABEL,
-    LABEL_FNEND,
+    LABEL_CLEANLOCAL,
+    LABEL_START,
 } type_t;
 
 // mem[0] = 0
@@ -185,6 +186,11 @@ void parse_primary(int label_break, int label_continue) {
     } else if (token_isnum(mem.compile_data.src_itr) == true) {
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_CONST, .token = mem.compile_data.src_itr, .val = token_toint(mem.compile_data.src_itr)};
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+    } else if (token_eq(token_next(mem.compile_data.src_itr), "(")) {
+        char* fn_name = mem.compile_data.src_itr;
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_primary(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_CALL, .token = fn_name, .val = 0};
     } else {
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_LOCAL_VAL, .token = mem.compile_data.src_itr, .val = 0};
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
@@ -365,6 +371,36 @@ void parse() {
     mem.compile_data.src_itr = mem.compile_data.src;
     mem.compile_data.node_itr = mem.compile_data.node;
     mem.compile_data.label_cnt = 0;
+    while (token_eq(mem.compile_data.src_itr, "fn")) {
+        int label_start = mem.compile_data.label_cnt++;
+        int arg_cnt = 0;
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        char* fn_name = mem.compile_data.src_itr;
+        mem.compile_data.map[label_start] = (cipair_t){.key = mem.compile_data.src_itr, .value = 0};
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        while (!token_eq(mem.compile_data.src_itr, ")")) {
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_LOCAL_ADDR, .token = mem.compile_data.src_itr, .val = 0};
+            mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+            arg_cnt++;
+        }
+        node_t* arg_itr = mem.compile_data.node_itr - 1;
+        for (int i = 0; i < arg_cnt; i++) {
+            arg_itr->val = arg_cnt - i - 6;
+            arg_itr--;
+        }
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = fn_name, .val = label_start};
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_LOCAL_ADDR, .token = NULL, .val = -2};
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_LOCAL_VAL, .token = NULL, .val = -2};
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_CONST, .token = NULL, .val = arg_cnt};
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_SUB, .token = NULL, .val = 0};
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_ASSIGN, .token = NULL, .val = 0};
+        parse_expr(-1, -1);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_RETURN, .token = NULL, .val = 0};
+        *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL_CLEANLOCAL, .token = NULL, .val = label_start};
+    }
+    *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL_START, .token = NULL, .val = 0};
     while (*mem.compile_data.src_itr != '\0') {
         parse_expr(-1, -1);
     }
@@ -389,12 +425,15 @@ void tobin() {
                 break;
             case INST_JMP:
             case INST_JZE:
+            case INST_CALL:
                 *bin_itr++ = node_itr->inst;
                 *bin_itr++ = 0;
                 break;
             case LABEL:
-            case LABEL_FNEND:
-                mem.compile_data.map[node_itr->val] = (cipair_t){.key = NULL, .value = bin_itr - mem.compile_data.bin};
+                mem.compile_data.map[node_itr->val] = (cipair_t){.key = mem.compile_data.map[node_itr->val].key, .value = bin_itr - mem.compile_data.bin};
+                break;
+            case LABEL_START:
+                mem.i32[GLOBALMEM_IP] = bin_itr - mem.compile_data.bin;
                 break;
             default:
                 *bin_itr++ = node_itr->inst;
@@ -403,12 +442,20 @@ void tobin() {
         node_itr++;
     }
 
-    // JMP JZE
+    // JMP JZE CALL
     node_itr = mem.compile_data.node;
     while (node_itr->inst != INST_NULL) {
         if (node_itr->inst == INST_JMP || node_itr->inst == INST_JZE) {
             int32_t addr = mem.compile_data.map[node_itr->val].value;
             *(node_itr->bin + 1) = addr;
+        }
+        if (node_itr->inst == INST_CALL) {
+            for (int32_t i = 0; i < mem.compile_data.label_cnt; i++) {
+                if (token_eq(mem.compile_data.map[i].key, node_itr->token)) {
+                    *(node_itr->bin + 1) = mem.compile_data.map[i].value;
+                    break;
+                }
+            }
         }
         node_itr++;
     }
@@ -417,11 +464,15 @@ void tobin() {
     node_itr = mem.compile_data.node;
     while (node_itr->inst != INST_NULL) {
         switch (node_itr->inst) {
-            case LABEL_FNEND:
+            case LABEL_CLEANLOCAL:
                 localval_cnt = 0;
                 break;
             case INST_PUSH_LOCAL_VAL:
             case INST_PUSH_LOCAL_ADDR: {
+                if (node_itr->token == NULL) {
+                    node_itr++;
+                    continue;
+                }
                 int32_t i;
                 for (i = mem.compile_data.label_cnt; i < mem.compile_data.label_cnt + localval_cnt; i++) {
                     if (token_eq(mem.compile_data.map[i].key, node_itr->token)) {
@@ -430,16 +481,21 @@ void tobin() {
                     }
                 }
                 if (i == mem.compile_data.label_cnt + localval_cnt) {
-                    mem.compile_data.map[i] = (cipair_t){.key = node_itr->token, .value = localval_cnt};
+                    if (node_itr->val == 0) {
+                        mem.compile_data.map[i] = (cipair_t){.key = node_itr->token, .value = localval_cnt};
+                    } else {
+                        mem.compile_data.map[i] = (cipair_t){.key = node_itr->token, .value = node_itr->val};
+                    }
                     localval_cnt++;
+                    node_itr->val = mem.compile_data.map[i].value;
                 }
+                *(node_itr->bin+1) = node_itr->val;
             } break;
         }
         node_itr++;
     }
 
     mem.i32[GLOBALMEM_ZERO] = 0;
-    mem.i32[GLOBALMEM_IP] = GLOBALMEM_SIZE;
     mem.i32[GLOBALMEM_BP] = bin_itr - mem.compile_data.bin;
     mem.i32[GLOBALMEM_SP] = mem.i32[GLOBALMEM_BP] + DEFAULT_STACK_SIZE;
 }
@@ -474,13 +530,15 @@ void exec() {
                 mem.i32[addr] = val;
             } break;
             case INST_CALL: {
-                int32_t addr = mem.i32[mem.i32[GLOBALMEM_IP]++];
-                mem.i32[--mem.i32[GLOBALMEM_SP]] = mem.i32[GLOBALMEM_BP];
-                mem.i32[GLOBALMEM_BP] = mem.i32[GLOBALMEM_SP];
-                mem.i32[GLOBALMEM_IP] = addr;
+                mem.i32[mem.i32[GLOBALMEM_SP] + 0] = mem.i32[GLOBALMEM_IP] + 1;
+                mem.i32[mem.i32[GLOBALMEM_SP] + 1] = mem.i32[GLOBALMEM_SP];
+                mem.i32[mem.i32[GLOBALMEM_SP] + 2] = mem.i32[GLOBALMEM_BP];
+                mem.i32[GLOBALMEM_IP] = mem.i32[mem.i32[GLOBALMEM_IP]];
+                mem.i32[GLOBALMEM_BP] = mem.i32[GLOBALMEM_SP] + 3;
+                mem.i32[GLOBALMEM_SP] += DEFAULT_STACK_SIZE;
             } break;
             case INST_RETURN: {
-                mem.i32[GLOBALMEM_SP] = mem.i32[GLOBALMEM_BP];
+                mem.i32[GLOBALMEM_SP] = mem.i32[GLOBALMEM_BP-1];
                 mem.i32[GLOBALMEM_BP] = mem.i32[mem.i32[GLOBALMEM_SP]++];
                 mem.i32[GLOBALMEM_IP] = mem.i32[GLOBALMEM_SP];
             } break;

@@ -1,13 +1,14 @@
-&i = 5
-
-loop (
-    if ( i == 10 ) (
-        break
-    )
-    if ( i == 7 ) (
-        &i = i + 1
-        continue
-    )
-    i = i * 10
-    &i = i + 1
+fn add ( a b ) (
+    return a + b
 )
+
+fn main ( ) (
+    5 = add ( 1 2 )
+)
+
+fn eternal_sleep ( ) (
+    loop (
+    )
+)
+
+main ( )
