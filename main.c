@@ -48,7 +48,9 @@ typedef enum {
     INST_BITOR,
     INST_BITXOR,
     INST_BITNOT,
-} inst_t;
+    LABEL,
+    LABEL_FNEND,
+} type_t;
 
 typedef enum {
     GLOBALMEM_NULL,
@@ -58,7 +60,7 @@ typedef enum {
 } globalmem_t;
 
 typedef struct {
-    inst_t inst;
+    type_t inst;
     char* token;
     int32_t val;
 } node_t;
@@ -75,10 +77,13 @@ union {
         char src[MEM_SIZE / sizeof(char) / 4];
         node_t node[MEM_SIZE / sizeof(node_t) / 4];
         cipair_t map[MEM_SIZE / sizeof(cipair_t) / 4];
+        char* src_itr;
+        node_t* node_itr;
+        int32_t map_size;
     } compile_data;
 } mem;
 
-void parse_expr(char** src_itr, node_t** node_itr);
+void parse_expr(int label_break, int label_continue);
 
 status_t readsrc() {
     FILE* file = fopen(src_path, "r");
@@ -137,197 +142,208 @@ int token_toint(char* token) {
     return num;
 }
 
-void parse_primary(char** src_itr, node_t** node_itr) {
-    if (token_eq(*src_itr, "(")) {
-        parse_expr(src_itr, node_itr);
-    } else if (token_isnum(*src_itr) == true) {
-        *((*node_itr)++) = (node_t){.inst = INST_PUSH_CONST, .token = *src_itr, .val = token_toint(*src_itr)};
-        *src_itr = token_next(*src_itr);
-    } else if (**src_itr == '&') {
-        *src_itr = *src_itr + 1;
-        *((*node_itr)++) = (node_t){.inst = INST_PUSH_LOCAL_ADDR, .token = *src_itr, .val = 0};
-        *src_itr = token_next(*src_itr);
+void parse_primary(int label_break, int label_continue) {
+    if (*mem.compile_data.src_itr == '&') {
+        mem.compile_data.src_itr = mem.compile_data.src_itr + 1;
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_LOCAL_ADDR, .token = mem.compile_data.src_itr, .val = 0};
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+    } else if (token_eq(mem.compile_data.src_itr, "(")) {
+        parse_expr(label_break, label_continue);
+    } else if (token_eq(mem.compile_data.src_itr, "return")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_expr(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_RETURN, .token = NULL, .val = 0};
+    } else if (token_eq(mem.compile_data.src_itr, "break")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMP, .token = NULL, .val = label_break};
+    } else if (token_eq(mem.compile_data.src_itr, "continue")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMP, .token = NULL, .val = label_continue};
+    } else if (token_isnum(mem.compile_data.src_itr) == true) {
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_CONST, .token = mem.compile_data.src_itr, .val = token_toint(mem.compile_data.src_itr)};
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
     } else {
-        *((*node_itr)++) = (node_t){.inst = INST_PUSH_LOCAL_VAL, .token = *src_itr, .val = 0};
-        *src_itr = token_next(*src_itr);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_LOCAL_VAL, .token = mem.compile_data.src_itr, .val = 0};
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
     }
 }
 
-void parse_unary(char** src_itr, node_t** node_itr) {
-    if (token_eq(*src_itr, "*")) {
-        *src_itr = token_next(*src_itr);
-        parse_unary(src_itr, node_itr);
-        *((*node_itr)++) = (node_t){.inst = INST_DEREF, .token = NULL, .val = 0};
-    } else if (token_eq(*src_itr, "+")) {
-        *src_itr = token_next(*src_itr);
-        parse_primary(src_itr, node_itr);
-    } else if (token_eq(*src_itr, "-")) {
-        *((*node_itr)++) = (node_t){.inst = INST_PUSH_CONST, .token = NULL, .val = 0};
-        *src_itr = token_next(*src_itr);
-        parse_primary(src_itr, node_itr);
-        *((*node_itr)++) = (node_t){.inst = INST_SUB, .token = NULL, .val = 0};
-    } else if (token_eq(*src_itr, "!")) {  // !e = (e == 0) https://learn.microsoft.com/ja-jp/cpp/cpp/logical-negation-operator-exclpt?view=msvc-170
-        *((*node_itr)++) = (node_t){.inst = INST_PUSH_CONST, .token = NULL, .val = 0};
-        *src_itr = token_next(*src_itr);
-        parse_primary(src_itr, node_itr);
-        *((*node_itr)++) = (node_t){.inst = INST_EQ, .token = NULL, .val = 0};
-    } else if (token_eq(*src_itr, "~")) {
-        *((*node_itr)++) = (node_t){.inst = INST_PUSH_CONST, .token = NULL, .val = 0};
-        *src_itr = token_next(*src_itr);
-        parse_primary(src_itr, node_itr);
-        *((*node_itr)++) = (node_t){.inst = INST_BITNOT, .token = NULL, .val = 0};
+void parse_unary(int label_break, int label_continue) {
+    if (token_eq(mem.compile_data.src_itr, "*")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_unary(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_DEREF, .token = NULL, .val = 0};
+    } else if (token_eq(mem.compile_data.src_itr, "+")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_primary(label_break, label_continue);
+    } else if (token_eq(mem.compile_data.src_itr, "-")) {
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_CONST, .token = NULL, .val = 0};
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_primary(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_SUB, .token = NULL, .val = 0};
+    } else if (token_eq(mem.compile_data.src_itr, "!")) {  // !e = (e == 0) https://learn.microsoft.com/ja-jp/cpp/cpp/logical-negation-operator-exclpt?view=msvc-170
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_CONST, .token = NULL, .val = 0};
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_primary(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_EQ, .token = NULL, .val = 0};
+    } else if (token_eq(mem.compile_data.src_itr, "~")) {
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_CONST, .token = NULL, .val = 0};
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_primary(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_BITNOT, .token = NULL, .val = 0};
     } else {
-        parse_primary(src_itr, node_itr);
+        parse_primary(label_break, label_continue);
     }
 }
 
-void parse_mul(char** src_itr, node_t** node_itr) {
-    parse_unary(src_itr, node_itr);
-    while (token_eq(*src_itr, "*") || token_eq(*src_itr, "/") || token_eq(*src_itr, "%")) {
-        char* op = *src_itr;
-        *src_itr = token_next(*src_itr);
-        parse_unary(src_itr, node_itr);
+void parse_mul(int label_break, int label_continue) {
+    parse_unary(label_break, label_continue);
+    while (token_eq(mem.compile_data.src_itr, "*") || token_eq(mem.compile_data.src_itr, "/") || token_eq(mem.compile_data.src_itr, "%")) {
+        char* op = mem.compile_data.src_itr;
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_unary(label_break, label_continue);
         if (token_eq(op, "*")) {
-            *((*node_itr)++) = (node_t){.inst = INST_MUL, .token = NULL, .val = 0};
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_MUL, .token = NULL, .val = 0};
         } else if (token_eq(op, "/")) {
-            *((*node_itr)++) = (node_t){.inst = INST_DIV, .token = NULL, .val = 0};
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_DIV, .token = NULL, .val = 0};
         } else if (token_eq(op, "%")) {
-            *((*node_itr)++) = (node_t){.inst = INST_MOD, .token = NULL, .val = 0};
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_MOD, .token = NULL, .val = 0};
         }
     }
 }
 
-void parse_add(char** src_itr, node_t** node_itr) {
-    parse_mul(src_itr, node_itr);
-    while (token_eq(*src_itr, "+") || token_eq(*src_itr, "-")) {
-        char* op = *src_itr;
-        *src_itr = token_next(*src_itr);
-        parse_mul(src_itr, node_itr);
+void parse_add(int label_break, int label_continue) {
+    parse_mul(label_break, label_continue);
+    while (token_eq(mem.compile_data.src_itr, "+") || token_eq(mem.compile_data.src_itr, "-")) {
+        char* op = mem.compile_data.src_itr;
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_mul(label_break, label_continue);
         if (token_eq(op, "+")) {
-            *((*node_itr)++) = (node_t){.inst = INST_ADD, .token = NULL, .val = 0};
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_ADD, .token = NULL, .val = 0};
         } else if (token_eq(op, "-")) {
-            *((*node_itr)++) = (node_t){.inst = INST_SUB, .token = NULL, .val = 0};
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_SUB, .token = NULL, .val = 0};
         }
     }
 }
 
-void parse_shift(char** src_itr, node_t** node_itr) {
-    parse_add(src_itr, node_itr);
-    while (token_eq(*src_itr, "<<") || token_eq(*src_itr, ">>")) {
-        char* op = *src_itr;
-        *src_itr = token_next(*src_itr);
-        parse_add(src_itr, node_itr);
+void parse_shift(int label_break, int label_continue) {
+    parse_add(label_break, label_continue);
+    while (token_eq(mem.compile_data.src_itr, "<<") || token_eq(mem.compile_data.src_itr, ">>")) {
+        char* op = mem.compile_data.src_itr;
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_add(label_break, label_continue);
         if (token_eq(op, "<<")) {
-            *((*node_itr)++) = (node_t){.inst = INST_SHL, .token = NULL, .val = 0};
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_SHL, .token = NULL, .val = 0};
         } else if (token_eq(op, ">>")) {
-            *((*node_itr)++) = (node_t){.inst = INST_SHR, .token = NULL, .val = 0};
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_SHR, .token = NULL, .val = 0};
         }
     }
 }
 
-void parse_rel(char** src_itr, node_t** node_itr) {
-    parse_shift(src_itr, node_itr);
-    while (token_eq(*src_itr, "<") || token_eq(*src_itr, "<=") || token_eq(*src_itr, ">") || token_eq(*src_itr, ">=")) {
-        char* op = *src_itr;
-        *src_itr = token_next(*src_itr);
-        parse_shift(src_itr, node_itr);
+void parse_rel(int label_break, int label_continue) {
+    parse_shift(label_break, label_continue);
+    while (token_eq(mem.compile_data.src_itr, "<") || token_eq(mem.compile_data.src_itr, "<=") || token_eq(mem.compile_data.src_itr, ">") || token_eq(mem.compile_data.src_itr, ">=")) {
+        char* op = mem.compile_data.src_itr;
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_shift(label_break, label_continue);
         if (token_eq(op, "<")) {
-            *((*node_itr)++) = (node_t){.inst = INST_LT, .token = NULL, .val = 0};
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_LT, .token = NULL, .val = 0};
         } else if (token_eq(op, "<=")) {
-            *((*node_itr)++) = (node_t){.inst = INST_LE, .token = NULL, .val = 0};
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_LE, .token = NULL, .val = 0};
         } else if (token_eq(op, ">")) {
-            *((*node_itr)++) = (node_t){.inst = INST_GT, .token = NULL, .val = 0};
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_GT, .token = NULL, .val = 0};
         } else if (token_eq(op, ">=")) {
-            *((*node_itr)++) = (node_t){.inst = INST_GE, .token = NULL, .val = 0};
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_GE, .token = NULL, .val = 0};
         }
     }
 }
 
-void parse_eq(char** src_itr, node_t** node_itr) {
-    parse_rel(src_itr, node_itr);
-    while (token_eq(*src_itr, "==") || token_eq(*src_itr, "!=")) {
-        char* op = *src_itr;
-        *src_itr = token_next(*src_itr);
-        parse_rel(src_itr, node_itr);
+void parse_eq(int label_break, int label_continue) {
+    parse_rel(label_break, label_continue);
+    while (token_eq(mem.compile_data.src_itr, "==") || token_eq(mem.compile_data.src_itr, "!=")) {
+        char* op = mem.compile_data.src_itr;
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_rel(label_break, label_continue);
         if (token_eq(op, "==")) {
-            *((*node_itr)++) = (node_t){.inst = INST_EQ, .token = NULL, .val = 0};
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_EQ, .token = NULL, .val = 0};
         } else if (token_eq(op, "!=")) {
-            *((*node_itr)++) = (node_t){.inst = INST_NE, .token = NULL, .val = 0};
+            *(mem.compile_data.node_itr++) = (node_t){.inst = INST_NE, .token = NULL, .val = 0};
         }
     }
 }
 
-void parse_and(char** src_itr, node_t** node_itr) {
-    parse_eq(src_itr, node_itr);
-    while (token_eq(*src_itr, "&")) {
-        *src_itr = token_next(*src_itr);
-        parse_eq(src_itr, node_itr);
-        *((*node_itr)++) = (node_t){.inst = INST_BITAND, .token = NULL, .val = 0};
+void parse_and(int label_break, int label_continue) {
+    parse_eq(label_break, label_continue);
+    while (token_eq(mem.compile_data.src_itr, "&")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_eq(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_BITAND, .token = NULL, .val = 0};
     }
 }
 
-void parse_xor(char** src_itr, node_t** node_itr) {
-    parse_and(src_itr, node_itr);
-    while (token_eq(*src_itr, "^")) {
-        *src_itr = token_next(*src_itr);
-        parse_and(src_itr, node_itr);
-        *((*node_itr)++) = (node_t){.inst = INST_BITXOR, .token = NULL, .val = 0};
+void parse_xor(int label_break, int label_continue) {
+    parse_and(label_break, label_continue);
+    while (token_eq(mem.compile_data.src_itr, "^")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_and(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_BITXOR, .token = NULL, .val = 0};
     }
 }
 
-void parse_or(char** src_itr, node_t** node_itr) {
-    parse_xor(src_itr, node_itr);
-    while (token_eq(*src_itr, "|")) {
-        *src_itr = token_next(*src_itr);
-        parse_xor(src_itr, node_itr);
-        *((*node_itr)++) = (node_t){.inst = INST_BITOR, .token = NULL, .val = 0};
+void parse_or(int label_break, int label_continue) {
+    parse_xor(label_break, label_continue);
+    while (token_eq(mem.compile_data.src_itr, "|")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_xor(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_BITOR, .token = NULL, .val = 0};
     }
 }
 
-void parse_logical_and(char** src_itr, node_t** node_itr) {
-    parse_or(src_itr, node_itr);
-    while (token_eq(*src_itr, "&&")) {
-        *src_itr = token_next(*src_itr);
-        parse_or(src_itr, node_itr);
-        *((*node_itr)++) = (node_t){.inst = INST_AND, .token = NULL, .val = 0};
+void parse_logical_and(int label_break, int label_continue) {
+    parse_or(label_break, label_continue);
+    while (token_eq(mem.compile_data.src_itr, "&&")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_or(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_AND, .token = NULL, .val = 0};
     }
 }
 
-void parse_logical_or(char** src_itr, node_t** node_itr) {
-    parse_logical_and(src_itr, node_itr);
-    while (token_eq(*src_itr, "||")) {
-        *src_itr = token_next(*src_itr);
-        parse_logical_and(src_itr, node_itr);
-        *((*node_itr)++) = (node_t){.inst = INST_OR, .token = NULL, .val = 0};
+void parse_logical_or(int label_break, int label_continue) {
+    parse_logical_and(label_break, label_continue);
+    while (token_eq(mem.compile_data.src_itr, "||")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_logical_and(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_OR, .token = NULL, .val = 0};
     }
 }
 
-void parse_assign(char** src_itr, node_t** node_itr) {
-    parse_logical_or(src_itr, node_itr);
-    while (token_eq(*src_itr, "=")) {
-        *src_itr = token_next(*src_itr);
-        parse_logical_or(src_itr, node_itr);
-        *((*node_itr)++) = (node_t){.inst = INST_ASSIGN, .token = NULL, .val = 0};
+void parse_assign(int label_break, int label_continue) {
+    parse_logical_or(label_break, label_continue);
+    while (token_eq(mem.compile_data.src_itr, "=")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_logical_or(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_ASSIGN, .token = NULL, .val = 0};
     }
 }
 
-void parse_expr(char** src_itr, node_t** node_itr) {
-    if (token_eq(*src_itr, "(")) {
-        *src_itr = token_next(*src_itr);
-        while (!token_eq(*src_itr, ")")) {
-            parse_expr(src_itr, node_itr);
+void parse_expr(int label_break, int label_continue) {
+    if (token_eq(mem.compile_data.src_itr, "(")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        while (!token_eq(mem.compile_data.src_itr, ")")) {
+            parse_expr(label_break, label_continue);
         }
-        *src_itr = token_next(*src_itr);
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
     } else {
-        parse_assign(src_itr, node_itr);
+        parse_assign(label_break, label_continue);
     }
 }
 
 void parse() {
-    char* src_itr = mem.compile_data.src;
-    node_t* node_itr = mem.compile_data.node;
-    parse_expr(&src_itr, &node_itr);
-    *node_itr = (node_t){.inst = INST_NULL, .token = NULL};
+    mem.compile_data.src_itr = mem.compile_data.src;
+    mem.compile_data.node_itr = mem.compile_data.node;
+    mem.compile_data.map_size = 0;
+    parse_expr(-1, -1);
+    *mem.compile_data.node_itr = (node_t){.inst = INST_NULL, .token = NULL};
 }
 
 void tobin() {
