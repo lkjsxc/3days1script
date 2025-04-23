@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #define src_path "./src.txt"
 #define MEM_SIZE 65536
@@ -42,6 +43,8 @@ typedef enum {
     INST_BITOR,
     INST_BITXOR,
     INST_BITNOT,
+    INST_READ,
+    INST_WRITE,
     LABEL,
     LABEL_CLEANLOCAL,
     LABEL_START,
@@ -186,6 +189,14 @@ void parse_primary(int label_break, int label_continue) {
     } else if (token_isnum(mem.compile_data.src_itr) == true) {
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_CONST, .token = mem.compile_data.src_itr, .val = token_toint(mem.compile_data.src_itr)};
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+    } else if (token_eq(mem.compile_data.src_itr, "write")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_expr(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_WRITE, .token = NULL, .val = 0};
+    } else if (token_eq(mem.compile_data.src_itr, "read")) {
+        mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
+        parse_expr(label_break, label_continue);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_READ, .token = NULL, .val = 0};
     } else if (token_eq(token_next(mem.compile_data.src_itr), "(")) {
         char* fn_name = mem.compile_data.src_itr;
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
@@ -386,7 +397,7 @@ void parse() {
         }
         node_t* arg_itr = mem.compile_data.node_itr - 1;
         for (int i = 0; i < arg_cnt; i++) {
-            arg_itr->val = - i - 4;
+            arg_itr->val = -i - 4;
             arg_itr--;
         }
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
@@ -397,6 +408,7 @@ void parse() {
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_SUB, .token = NULL, .val = 0};
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_ASSIGN, .token = NULL, .val = 0};
         parse_expr(-1, -1);
+        *(mem.compile_data.node_itr++) = (node_t){.inst = INST_PUSH_CONST, .token = NULL, .val = 0};
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_RETURN, .token = NULL, .val = 0};
         *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL_CLEANLOCAL, .token = NULL, .val = label_start};
     }
@@ -539,9 +551,9 @@ void exec() {
             } break;
             case INST_RETURN: {
                 int32_t ret_val = mem.i32[mem.i32[GLOBALMEM_SP] - 1];
-                mem.i32[GLOBALMEM_IP] = mem.i32[mem.i32[GLOBALMEM_BP]-3];
-                mem.i32[GLOBALMEM_SP] = mem.i32[mem.i32[GLOBALMEM_BP]-2];
-                mem.i32[GLOBALMEM_BP] = mem.i32[mem.i32[GLOBALMEM_BP]-1];
+                mem.i32[GLOBALMEM_IP] = mem.i32[mem.i32[GLOBALMEM_BP] - 3];
+                mem.i32[GLOBALMEM_SP] = mem.i32[mem.i32[GLOBALMEM_BP] - 2];
+                mem.i32[GLOBALMEM_BP] = mem.i32[mem.i32[GLOBALMEM_BP] - 1];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = ret_val;
             } break;
             case INST_JMP: {
@@ -649,7 +661,17 @@ void exec() {
                 int32_t val = mem.i32[--mem.i32[GLOBALMEM_SP]];
                 mem.i32[mem.i32[GLOBALMEM_SP]++] = ~val;
             } break;
-
+            case INST_READ: {
+                int32_t ch = 0;
+                int32_t fd = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                read(fd, &ch, 1);
+                mem.i32[mem.i32[GLOBALMEM_SP]++] = ch;
+            } break;
+            case INST_WRITE: {
+                int32_t ch = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                int32_t fd = mem.i32[--mem.i32[GLOBALMEM_SP]];
+                write(fd, &ch, 1);
+            } break;
             default:
                 return;
         }

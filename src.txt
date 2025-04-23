@@ -1,14 +1,20 @@
+fn print_int ( c ) (
+    if c == 0 (
+        write ( 1 48 )
+        write ( 1 10 )
+        return 0
+    )
+    if c < 0 (
+        write ( 1 45 )
+    )
+    write ( 1 c + 48 )
+    write ( 1 10 )
+    return 0
+)
+
 fn mul ( a b ) (
     return a * b
 )
 
-fn main ( ) (
-    5 = mul ( 6 111111 )
-)
-
-fn eternal_sleep ( ) (
-    loop (
-    )
-)
-
-main ( )
+print_int ( 0 )
+print_int ( 1 )
