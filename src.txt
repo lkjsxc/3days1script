@@ -4,6 +4,10 @@ loop (
     if ( i == 10 ) (
         break
     )
+    if ( i == 7 ) (
+        &i = i + 1
+        continue
+    )
     i = i * 10
     &i = i + 1
 )
