@@ -129,7 +129,7 @@ bool token_eq(char* src1, char* src2) {
 
 bool token_isnum(char* token) {
     while (*token != '\0' && *token != ' ' && *token != '\n' && *token != '\t') {
-        if (*token < '0' || *token > '9') {
+        if ((*token < '0' || *token > '9') && *token != '-') {
             return false;
         }
         token++;
@@ -139,8 +139,16 @@ bool token_isnum(char* token) {
 
 int token_toint(char* token) {
     int num = 0;
+    bool is_neg = *token == '-';
+    if (is_neg) {
+        token++;
+    }
     while (*token != '\0' && *token != ' ' && *token != '\n' && *token != '\t') {
-        num = num * 10 + (*(token++) - '0');
+        num = num * 10 + (*token - '0');
+        token++;
+    }
+    if (is_neg) {
+        num = -num;
     }
     return num;
 }

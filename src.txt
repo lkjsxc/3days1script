@@ -6,6 +6,7 @@ fn print_int ( c ) (
     )
     if c < 0 (
         write ( 1 45 )
+        &c = - c
     )
     write ( 1 c + 48 )
     write ( 1 10 )
@@ -16,5 +17,6 @@ fn mul ( a b ) (
     return a * b
 )
 
-print_int ( 0 )
-print_int ( 1 )
+&a = print_int ( 0 )
+&a = print_int ( 1 )
+&a = print_int ( -1 )
