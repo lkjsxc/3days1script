@@ -1,8 +1,3 @@
-// mem[0] = 0
-// mem[1] = ip
-// mem[2] = sp
-// mem[3] = bp
-
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -51,8 +46,12 @@ typedef enum {
     LABEL_FNEND,
 } type_t;
 
+// mem[0] = 0
+// mem[1] = ip
+// mem[2] = sp
+// mem[3] = bp
 typedef enum {
-    GLOBALMEM_NULL,
+    GLOBALMEM_ZERO,
     GLOBALMEM_IP,
     GLOBALMEM_SP,
     GLOBALMEM_BP,
@@ -153,14 +152,14 @@ void parse_primary(int label_break, int label_continue) {
         int label_if = mem.compile_data.label_cnt++;
         int label_else = mem.compile_data.label_cnt++;
         mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
-        parse_expr(label_break, label_continue);    // conditional expression
+        parse_expr(label_break, label_continue);  // conditional expression
         *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMZ, .token = NULL, .val = label_if};
-        parse_expr(label_break, label_continue);    // when true
+        parse_expr(label_break, label_continue);  // when true
         if (token_eq(mem.compile_data.src_itr, "else")) {
             mem.compile_data.src_itr = token_next(mem.compile_data.src_itr);
             *(mem.compile_data.node_itr++) = (node_t){.inst = INST_JMP, .token = NULL, .val = label_else};
             *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_if};
-            parse_expr(label_break, label_continue);    // when false
+            parse_expr(label_break, label_continue);  // when false
             *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_else};
         } else {
             *(mem.compile_data.node_itr++) = (node_t){.inst = LABEL, .token = NULL, .val = label_if};
@@ -358,7 +357,9 @@ void parse() {
     mem.compile_data.src_itr = mem.compile_data.src;
     mem.compile_data.node_itr = mem.compile_data.node;
     mem.compile_data.label_cnt = 0;
-    parse_expr(-1, -1);
+    while (*mem.compile_data.src_itr != '\0') {
+        parse_expr(-1, -1);
+    }
     *mem.compile_data.node_itr = (node_t){.inst = INST_NULL, .token = NULL};
 }
 
@@ -366,7 +367,7 @@ void tobin() {
     int32_t* bin_begin = mem.compile_data.bin + GLOBALMEM_SIZE;
     int32_t* bin_itr = bin_begin;
     int32_t localval_cnt = 0;
-    
+
     node_t* node_itr = mem.compile_data.node;
     while (node_itr->inst != INST_NULL) {
         node_itr->bin = bin_itr;
@@ -395,7 +396,7 @@ void tobin() {
 
     node_itr = mem.compile_data.node;
     while (node_itr->inst != INST_NULL) {
-        if(node_itr->inst == INST_JMP || node_itr->inst == INST_JMZ) {
+        if (node_itr->inst == INST_JMP || node_itr->inst == INST_JMZ) {
             int32_t addr = mem.compile_data.map[node_itr->val].value;
             *(node_itr->bin + 1) = addr;
         }
@@ -426,6 +427,7 @@ void tobin() {
         node_itr++;
     }
 
+    mem.i32[GLOBALMEM_ZERO] = 0;
     mem.i32[GLOBALMEM_IP] = GLOBALMEM_SIZE;
     mem.i32[GLOBALMEM_BP] = bin_itr - mem.compile_data.bin;
     mem.i32[GLOBALMEM_SP] = mem.i32[GLOBALMEM_BP] + DEFAULT_STACK_SIZE;
